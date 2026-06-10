@@ -456,14 +456,25 @@ body {
   resize: vertical;
   min-height: 80px;
 }
+/* ─── Form Grid (matches asistencia-tecnica pattern) ── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.form-grid .form-group {
+  min-width: 0;
+}
+.form-grid .form-group.full-width {
+  grid-column: 1 / -1;
+}
 .form-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
 .form-row .form-group {
-  flex: 1;
-  min-width: 0; /* critical: allows flex children to shrink below content size */
-  overflow: hidden;
+  min-width: 0;
 }
 
 /* ─── Day Entry Cards ─────────────────────────────── */
@@ -559,7 +570,7 @@ body {
   .new-record-center { order: 3; width: 100%; justify-content: center; }
   .main { padding: 1rem 0.75rem 3rem; }
   .modal-dialog { max-height: 95vh; border-radius: 12px; }
-  .form-row { flex-direction: column; gap: 0; }
+  .form-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
