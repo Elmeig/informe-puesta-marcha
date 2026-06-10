@@ -32,14 +32,23 @@ document.addEventListener('DOMContentLoaded', () => {
         btnTheme: document.getElementById('btn-theme')
     };
 
-    // Theme toggle
-    const currentTheme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', currentTheme);
+    // Theme toggle — 3 themes: light → mid → dark (same as Bug Tracker)
+    const themes = ['light', 'mid', 'dark'];
+    const themeIcons = { light: '🌙', mid: '🌗', dark: '☀️' };
+    let currentTheme = localStorage.getItem('theme') || 'dark';
+
+    function applyTheme(theme) {
+        currentTheme = theme;
+        document.documentElement.setAttribute('data-theme', theme);
+        DOM.btnTheme.textContent = themeIcons[theme];
+        localStorage.setItem('theme', theme);
+    }
+    applyTheme(currentTheme);
+
     DOM.btnTheme.addEventListener('click', () => {
-        const theme = document.documentElement.getAttribute('data-theme');
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
+        const idx = themes.indexOf(currentTheme);
+        const next = themes[(idx + 1) % themes.length];
+        applyTheme(next);
     });
 
     async function fetchReports() {
@@ -48,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('api/reports');
             const data = await res.json();
             reports = data.reports || [];
+            updateCachedLists(reports);
             renderReports();
         } catch (e) {
             showToast('Error cargando informes', 'error');
@@ -296,4 +306,182 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load
     fetchReports();
+});
+
+/* ─── Combobox: Client Autocomplete ────────────────── */
+let _clientHighlightedIndex = -1;
+
+function getUniqueClients() {
+    try {
+        const container = document.getElementById('records-container');
+        // Extract from rendered cards — fallback: use the global reports data
+    } catch (_) {}
+    return [];
+}
+
+function buildClientList() {
+    // Get unique clients from localStorage cached reports
+    try {
+        const cached = JSON.parse(localStorage.getItem('_puesta_clients') || '[]');
+        return cached;
+    } catch (_) {
+        return [];
+    }
+}
+
+function updateCachedLists(reports) {
+    const clients = [...new Set(reports.map(r => r.cliente).filter(Boolean))].sort();
+    const techs = [...new Set(reports.map(r => r.tecnicos).filter(Boolean))].sort();
+    localStorage.setItem('_puesta_clients', JSON.stringify(clients));
+    localStorage.setItem('_puesta_techs', JSON.stringify(techs));
+}
+
+function filterClientDropdown(value, openOnEmpty = false) {
+    const dropdown = document.getElementById('client-dropdown');
+    const list = JSON.parse(localStorage.getItem('_puesta_clients') || '[]');
+    const q = value.trim().toLowerCase();
+
+    if (!openOnEmpty && !q) { dropdown.classList.remove('open'); return; }
+    const filtered = q ? list.filter(c => c.toLowerCase().includes(q)) : list;
+    if (filtered.length === 0) { dropdown.classList.remove('open'); return; }
+
+    dropdown.innerHTML = '';
+    filtered.forEach((name, i) => {
+        const item = document.createElement('div');
+        item.className = 'combobox-item';
+        item.dataset.value = name;
+        if (q) {
+            const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            item.innerHTML = name.replace(re, '<mark>$1</mark>');
+        } else {
+            item.textContent = name;
+        }
+        item.addEventListener('mousedown', (e) => { e.preventDefault(); selectClientItem(name); });
+        item.addEventListener('mouseenter', () => { _clientHighlightedIndex = i; updateClientHighlight(); });
+        dropdown.appendChild(item);
+    });
+    dropdown.classList.add('open');
+    _clientHighlightedIndex = -1;
+}
+
+function updateClientHighlight() {
+    const dropdown = document.getElementById('client-dropdown');
+    dropdown.querySelectorAll('.combobox-item').forEach((item, i) => {
+        item.classList.toggle('highlighted', i === _clientHighlightedIndex);
+    });
+}
+
+function selectClientItem(name) {
+    document.getElementById('form-client').value = name;
+    document.getElementById('client-dropdown').classList.remove('open');
+    _clientHighlightedIndex = -1;
+}
+
+function handleClientKeydown(event) {
+    const dropdown = document.getElementById('client-dropdown');
+    const items = dropdown.querySelectorAll('.combobox-item');
+    if (!dropdown.classList.contains('open')) {
+        if (event.key === 'ArrowDown' || event.key === 'Enter') {
+            event.preventDefault();
+            filterClientDropdown('', true);
+        }
+        return;
+    }
+    if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        _clientHighlightedIndex = Math.min(_clientHighlightedIndex + 1, items.length - 1);
+        updateClientHighlight();
+        items[_clientHighlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        _clientHighlightedIndex = Math.max(_clientHighlightedIndex - 1, -1);
+        updateClientHighlight();
+    } else if (event.key === 'Enter') {
+        if (_clientHighlightedIndex >= 0 && items[_clientHighlightedIndex]) {
+            event.preventDefault();
+            selectClientItem(items[_clientHighlightedIndex].dataset.value);
+        }
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
+        dropdown.classList.remove('open');
+    }
+}
+
+/* ─── Combobox: Technician Autocomplete ────────────── */
+let _techHighlightedIndex = -1;
+
+function filterTechDropdown(value, openOnEmpty = false) {
+    const dropdown = document.getElementById('tech-dropdown');
+    const list = JSON.parse(localStorage.getItem('_puesta_techs') || '[]');
+    const q = value.trim().toLowerCase();
+
+    if (!openOnEmpty && !q) { dropdown.classList.remove('open'); return; }
+    const filtered = q ? list.filter(c => c.toLowerCase().includes(q)) : list;
+    if (filtered.length === 0) { dropdown.classList.remove('open'); return; }
+
+    dropdown.innerHTML = '';
+    filtered.forEach((name, i) => {
+        const item = document.createElement('div');
+        item.className = 'combobox-item';
+        item.dataset.value = name;
+        if (q) {
+            const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            item.innerHTML = name.replace(re, '<mark>$1</mark>');
+        } else {
+            item.textContent = name;
+        }
+        item.addEventListener('mousedown', (e) => { e.preventDefault(); selectTechItem(name); });
+        item.addEventListener('mouseenter', () => { _techHighlightedIndex = i; updateTechHighlight(); });
+        dropdown.appendChild(item);
+    });
+    dropdown.classList.add('open');
+    _techHighlightedIndex = -1;
+}
+
+function updateTechHighlight() {
+    const dropdown = document.getElementById('tech-dropdown');
+    dropdown.querySelectorAll('.combobox-item').forEach((item, i) => {
+        item.classList.toggle('highlighted', i === _techHighlightedIndex);
+    });
+}
+
+function selectTechItem(name) {
+    document.getElementById('form-techs').value = name;
+    document.getElementById('tech-dropdown').classList.remove('open');
+    _techHighlightedIndex = -1;
+}
+
+function handleTechKeydown(event) {
+    const dropdown = document.getElementById('tech-dropdown');
+    const items = dropdown.querySelectorAll('.combobox-item');
+    if (!dropdown.classList.contains('open')) {
+        if (event.key === 'ArrowDown' || event.key === 'Enter') {
+            event.preventDefault();
+            filterTechDropdown('', true);
+        }
+        return;
+    }
+    if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        _techHighlightedIndex = Math.min(_techHighlightedIndex + 1, items.length - 1);
+        updateTechHighlight();
+        items[_techHighlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        _techHighlightedIndex = Math.max(_techHighlightedIndex - 1, -1);
+        updateTechHighlight();
+    } else if (event.key === 'Enter') {
+        if (_techHighlightedIndex >= 0 && items[_techHighlightedIndex]) {
+            event.preventDefault();
+            selectTechItem(items[_techHighlightedIndex].dataset.value);
+        }
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
+        dropdown.classList.remove('open');
+    }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.combobox-wrap')) {
+        document.querySelectorAll('.combobox-dropdown').forEach(d => d.classList.remove('open'));
+    }
 });

@@ -5,32 +5,54 @@
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
   --primary-light: #eff6ff;
-  --surface: #ffffff;
+  --success: #16a34a;
+  --success-bg: #dcfce7;
+  --danger: #dc2626;
   --bg: #f1f5f9;
+  --surface: #ffffff;
   --text: #1e293b;
   --text-muted: #64748b;
   --border: #e2e8f0;
   --shadow: rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
   --header-from: #1e40af;
   --header-to: #3b82f6;
-  --danger: #ef4444;
-  --success: #22c55e;
+}
+
+[data-theme="mid"] {
+  --primary: #0d9488;
+  --primary-hover: #0f766e;
+  --primary-light: #ccfbf1;
+  --success: #15803d;
+  --success-bg: #d1fae5;
+  --danger: #dc2626;
+  --bg: #cfdbd5;
+  --surface: #e8eeec;
+  --text: #1e3a3a;
+  --text-muted: #5a6b6b;
+  --border: #a8bdb6;
+  --shadow: rgba(30,58,58,0.1);
+  --shadow-lg: 0 4px 12px rgba(30,58,58,0.12);
+  --header-from: #1e4a5f;
+  --header-to: #2c6e7f;
 }
 
 [data-theme="dark"] {
   --primary: #60a5fa;
   --primary-hover: #3b82f6;
-  --primary-light: #1e293b;
-  --surface: #1e293b;
-  --bg: #0f172a;
-  --text: #e2e8f0;
-  --text-muted: #94a3b8;
-  --border: #334155;
-  --shadow: rgba(0,0,0,0.4);
+  --primary-light: #1a1e2e;
+  --success: #4ade80;
+  --success-bg: #14291a;
+  --danger: #f87171;
+  --bg: #0f1117;
+  --surface: #181a24;
+  --text: #e4e6f0;
+  --text-muted: #7e829e;
+  --border: #2a2d3e;
+  --shadow: rgba(0,0,0,0.5);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.6);
   --header-from: #0f172a;
   --header-to: #1e293b;
-  --danger: #f87171;
-  --success: #4ade80;
 }
 
 body {
@@ -361,12 +383,74 @@ body {
   background: var(--bg);
   color: var(--text);
   transition: border-color 0.2s, box-shadow 0.2s;
+  min-width: 0; /* prevent date inputs from overflowing on mobile */
+}
+.form-group input[type="date"] {
+  min-width: 0;
+  max-width: 100%;
 }
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* ─── Combobox (Client/Technician dropdown with typing + click) ─ */
+.combobox-wrap {
+  position: relative;
+}
+.combobox-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+.combobox-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.combobox-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.combobox-dropdown.open {
+  display: block;
+}
+.combobox-item {
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text);
+  transition: background 0.1s;
+}
+.combobox-item:hover,
+.combobox-item.highlighted {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.combobox-item mark {
+  background: transparent;
+  color: var(--primary);
+  font-weight: 700;
 }
 .form-group textarea {
   resize: vertical;

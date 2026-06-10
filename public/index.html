@@ -68,7 +68,11 @@
                 <form id="record-form" class="modal-form">
                     <div class="form-group">
                         <label for="form-client">Cliente / Proyecto</label>
-                        <input type="text" id="form-client" name="client" required autocomplete="off" placeholder="Ej: KSA THOW VISION">
+                        <div class="combobox-wrap">
+                            <input type="text" id="form-client" name="client" required autocomplete="off" placeholder="Ej: KSA THOW VISION" class="combobox-input"
+                                oninput="filterClientDropdown(this.value)" onfocus="filterClientDropdown(this.value, true)" onkeydown="handleClientKeydown(event)">
+                            <div class="combobox-dropdown" id="client-dropdown"></div>
+                        </div>
                     </div>
                     <div class="form-row" style="display: flex; gap: 1rem;">
                         <div class="form-group" style="flex: 1;">
@@ -82,7 +86,11 @@
                     </div>
                     <div class="form-group">
                         <label for="form-techs">Técnicos involucrados</label>
-                        <input type="text" id="form-techs" name="techs" required placeholder="Ej: Mehdi, Amin">
+                        <div class="combobox-wrap">
+                            <input type="text" id="form-techs" name="techs" required placeholder="Ej: Mehdi, Amin" class="combobox-input"
+                                oninput="filterTechDropdown(this.value)" onfocus="filterTechDropdown(this.value, true)" onkeydown="handleTechKeydown(event)">
+                            <div class="combobox-dropdown" id="tech-dropdown"></div>
+                        </div>
                     </div>
 
                     <div class="form-group">
