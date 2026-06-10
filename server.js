@@ -442,63 +442,141 @@ async function parseDocxImport(buffer) {
   const text = result.value || '';
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // Parse header fields from the info table
   let cliente = '', fecha_inicio = '', fecha_fin = '', tecnicos = '', notas_adicionales = '';
   const diario = [];
 
-  // Strategy: find known labels and take the text after them
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/cliente\s*\/?\s*proyecto/i.test(line)) {
-      // Value might be on the same line after the label, or on the next line
-      const after = line.replace(/.*cliente\s*\/?\s*proyecto\s*/i, '').trim();
-      cliente = after || (lines[i + 1] || '').trim();
-      if (!after && lines[i + 1]) i++;
-    } else if (/fecha\s+inicio/i.test(line)) {
-      const after = line.replace(/.*fecha\s+inicio\s*/i, '').trim();
-      fecha_inicio = after || (lines[i + 1] || '').trim();
-      if (!after && lines[i + 1]) i++;
-    } else if (/fecha\s+fin/i.test(line)) {
-      const after = line.replace(/.*fecha\s+fin\s*/i, '').trim();
-      fecha_fin = after || (lines[i + 1] || '').trim();
-      if (!after && lines[i + 1]) i++;
-    } else if (/t.cnicos?\s+involucrados?/i.test(line)) {
-      const after = line.replace(/.*t.cnicos?\s+involucrados?\s*/i, '').trim();
-      tecnicos = after || (lines[i + 1] || '').trim();
-      if (!after && lines[i + 1]) i++;
+  // ── Detect format ──────────────────────────────────
+  // Format A: Our export (labels: "Cliente / Proyecto", "Fecha Inicio", etc.)
+  // Format B: Original Word template (labels: "CUSTOMER NAME:", "DATE:", "EQUIPMENT:", etc.)
+  const isFormatB = lines.some(l => /^CUSTOMER\s+NAME\s*:/i.test(l));
+
+  if (isFormatB) {
+    // ── Parse Format B (original Word template) ──────
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^CUSTOMER\s+NAME\s*:/i.test(line)) {
+        cliente = line.replace(/^CUSTOMER\s+NAME\s*:\s*/i, '').trim();
+      } else if (/^DATE\s*:/i.test(line)) {
+        const dateStr = line.replace(/^DATE\s*:\s*/i, '').trim();
+        // Try to extract start and end dates from free text like "Del 21 al 31 de octubre del 2024"
+        fecha_inicio = dateStr;
+        fecha_fin = dateStr;
+      } else if (/^EQUIPMENT\s*:/i.test(line)) {
+        // Store equipment info in tecnicos if no techs found
+        const equip = line.replace(/^EQUIPMENT\s*:\s*/i, '').trim();
+        if (!tecnicos) tecnicos = equip;
+      }
     }
-  }
 
-  // Parse diary: look for date patterns (YYYY-MM-DD or DD/MM/YYYY) followed by description text
-  let inDiary = false;
-  let inNotas = false;
-  const dateRe = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
+    // Parse diary: day entries start with day-name + date (e.g., "Lunes 21/10/24", "MARTES 22/10/24")
+    const dayNameRe = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i;
+    let inAction = false;
+    let inNotes = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/diario\s+de\s+puesta/i.test(line)) { inDiary = true; inNotas = false; continue; }
-    if (/notas?\s+adicionales?/i.test(line)) { inDiary = false; inNotas = true; continue; }
-    if (/tareas\s+realizadas?/i.test(line)) continue; // skip header
-    if (line === 'Fecha') continue; // skip header
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
 
-    if (inNotas) {
-      notas_adicionales += (notas_adicionales ? '\n' : '') + line;
-    } else if (inDiary) {
-      if (dateRe.test(line)) {
-        // Collect all lines until next date or section
-        const descLines = [];
-        while (i + 1 < lines.length && !dateRe.test(lines[i + 1]) && !/notas?\s+adicionales?/i.test(lines[i + 1])) {
-          i++;
-          if (lines[i] === 'Fecha' || /tareas\s+realizadas?/i.test(lines[i])) continue;
-          descLines.push(lines[i]);
+      // Section markers
+      if (/^ACTION\s*:/i.test(line)) { inAction = true; inNotes = false; continue; }
+      if (/^ADDITIONAL\s+NOTE\s*:/i.test(line)) { inAction = false; inNotes = true; continue; }
+      if (/^PURPOSE\s+OF\s+VISIT\s*:/i.test(line)) continue;
+      if (/^FINAL\s+PHOTOS/i.test(line)) { inNotes = false; continue; }
+
+      if (inNotes) {
+        notas_adicionales += (notas_adicionales ? '\n' : '') + line;
+      } else if (inAction) {
+        const dayMatch = line.match(dayNameRe);
+        if (dayMatch) {
+          const rawDate = dayMatch[2];
+          // Normalize date: DD/MM/YY → DD/MM/YYYY
+          let fecha = rawDate;
+          const parts = rawDate.split('/');
+          if (parts.length === 3 && parts[2].length === 2) {
+            fecha = `${parts[0]}/${parts[1]}/20${parts[2]}`;
+          }
+          // Convert to YYYY-MM-DD for consistency
+          if (parts.length === 3) {
+            const dd = parts[0].padStart(2, '0');
+            const mm = parts[1].padStart(2, '0');
+            const yyyy = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+            fecha = `${yyyy}-${mm}-${dd}`;
+          }
+
+          // Collect description lines until next day or section
+          const descLines = [];
+          while (i + 1 < lines.length) {
+            const nextLine = lines[i + 1];
+            if (dayNameRe.test(nextLine)) break;
+            if (/^ADDITIONAL\s+NOTE\s*:/i.test(nextLine)) break;
+            if (/^FINAL\s+PHOTOS/i.test(nextLine)) break;
+            i++;
+            descLines.push(lines[i]);
+          }
+          diario.push({ fecha, descripcion: descLines.join('\n') });
         }
-        diario.push({ fecha: line, descripcion: descLines.join('\n') });
+      }
+    }
+
+    // Set fecha_inicio and fecha_fin from diary entries if possible
+    if (diario.length > 0) {
+      const sorted = [...diario].sort((a, b) => a.fecha.localeCompare(b.fecha));
+      fecha_inicio = sorted[0].fecha;
+      fecha_fin = sorted[sorted.length - 1].fecha;
+    }
+
+  } else {
+    // ── Parse Format A (our export format) ────────────
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/cliente\s*\/?\s*proyecto/i.test(line)) {
+        const after = line.replace(/.*cliente\s*\/?\s*proyecto\s*/i, '').trim();
+        cliente = after || (lines[i + 1] || '').trim();
+        if (!after && lines[i + 1]) i++;
+      } else if (/fecha\s+inicio/i.test(line)) {
+        const after = line.replace(/.*fecha\s+inicio\s*/i, '').trim();
+        fecha_inicio = after || (lines[i + 1] || '').trim();
+        if (!after && lines[i + 1]) i++;
+      } else if (/fecha\s+fin/i.test(line)) {
+        const after = line.replace(/.*fecha\s+fin\s*/i, '').trim();
+        fecha_fin = after || (lines[i + 1] || '').trim();
+        if (!after && lines[i + 1]) i++;
+      } else if (/t.cnicos?\s+involucrados?/i.test(line)) {
+        const after = line.replace(/.*t.cnicos?\s+involucrados?\s*/i, '').trim();
+        tecnicos = after || (lines[i + 1] || '').trim();
+        if (!after && lines[i + 1]) i++;
+      }
+    }
+
+    // Parse diary from our format
+    let inDiary = false;
+    let inNotas = false;
+    const dateRe = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/diario\s+de\s+puesta/i.test(line)) { inDiary = true; inNotas = false; continue; }
+      if (/notas?\s+adicionales?/i.test(line)) { inDiary = false; inNotas = true; continue; }
+      if (/tareas\s+realizadas?/i.test(line)) continue;
+      if (line === 'Fecha') continue;
+
+      if (inNotas) {
+        notas_adicionales += (notas_adicionales ? '\n' : '') + line;
+      } else if (inDiary) {
+        if (dateRe.test(line)) {
+          const descLines = [];
+          while (i + 1 < lines.length && !dateRe.test(lines[i + 1]) && !/notas?\s+adicionales?/i.test(lines[i + 1])) {
+            i++;
+            if (lines[i] === 'Fecha' || /tareas\s+realizadas?/i.test(lines[i])) continue;
+            descLines.push(lines[i]);
+          }
+          diario.push({ fecha: line, descripcion: descLines.join('\n') });
+        }
       }
     }
   }
 
   if (!cliente) {
-    return { error: 'No se pudo extraer el cliente del documento' };
+    return { error: 'No se pudo extraer el cliente del documento. Asegúrese de que el documento contiene "CUSTOMER NAME:" o "Cliente / Proyecto".' };
   }
 
   return { cliente, fecha_inicio, fecha_fin, tecnicos, diario, notas_adicionales };
