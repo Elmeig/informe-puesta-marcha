@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Puesta en Marcha</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button class="btn-sidebar-toggle" id="btn-sidebar-toggle" aria-label="Menu">☰</button>
+                <div class="header-brand">
+                    <div class="logo-wrench">⚙️</div>
+                    <span class="logo-text">Puesta en Marcha</span>
+                </div>
+                <div class="header-stats" id="header-stats">
+                    <span class="stat-item" id="stat-total" title="Total informes">Total: 0</span>
+                </div>
+            </div>
+            <div class="new-record-center">
+                <button id="btn-add-record" class="btn-primary" title="Nuevo Informe">
+                    ➕ Nuevo Informe
+                </button>
+            </div>
+            <div class="header-right">
+                <div class="header-search">
+                    <span class="header-search-icon">🔍</span>
+                    <input type="text" id="global-search-input" placeholder="Buscar..." autocomplete="off">
+                    <span id="global-search-clear" style="display:none">&times;</span>
+                </div>
+                <button id="btn-theme" class="theme-btn" title="Cambiar tema">🌙</button>
+            </div>
+        </header>
+
+        <!-- Sidebar Backdrop (mobile) -->
+        <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+
+        <!-- Sidebar (filtros) -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>Filtros</h3>
+                <button class="btn-sidebar-close" id="btn-sidebar-close">&times;</button>
+            </div>
+            <div class="sidebar-content">
+                <div class="filter-group">
+                    <label>Cliente</label>
+                    <input type="text" id="filter-client" placeholder="Buscar cliente...">
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main">
+            <div id="records-container"></div>
+        </main>
+
+        <!-- Add/Edit Modal -->
+        <div class="modal-overlay" id="modal-record">
+            <div class="modal-dialog" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h2 id="modal-title">Nuevo Informe</h2>
+                    <button class="btn-modal-close" id="btn-modal-close">&times;</button>
+                </div>
+                <form id="record-form" class="modal-form">
+                    <div class="form-group">
+                        <label for="form-client">Cliente / Proyecto</label>
+                        <input type="text" id="form-client" name="client" required autocomplete="off" placeholder="Ej: KSA THOW VISION">
+                    </div>
+                    <div class="form-row" style="display: flex; gap: 1rem;">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="form-date-start">Fecha Inicio</label>
+                            <input type="date" id="form-date-start" name="dateStart" required>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="form-date-end">Fecha Fin</label>
+                            <input type="date" id="form-date-end" name="dateEnd" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="form-techs">Técnicos involucrados</label>
+                        <input type="text" id="form-techs" name="techs" required placeholder="Ej: Mehdi, Amin">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Diario de Tareas</label>
+                        <div id="diario-container">
+                            <!-- Los días se inyectarán aquí -->
+                        </div>
+                        <button type="button" class="btn-secondary btn-sm" id="btn-add-day" style="margin-top: 10px;">➕ Añadir Día</button>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="form-notes">Notas Adicionales</label>
+                        <textarea id="form-notes" name="notes" rows="4" placeholder="Faltan piezas, tubos no encontrados, problemas varios..."></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" id="btn-cancel-modal">Cancelar</button>
+                        <button type="submit" class="btn-primary" id="btn-save-record">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- View Modal -->
+        <div class="modal-overlay" id="modal-view">
+            <div class="modal-dialog" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h2 id="view-title">Informe</h2>
+                    <button class="btn-modal-close" id="btn-view-close">&times;</button>
+                </div>
+                <div class="modal-content" id="view-content" style="padding: 1rem; max-height: 70vh; overflow-y: auto;">
+                    <!-- Report content injected here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-view-close-footer">Cerrar</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading-overlay" id="loading-overlay">
+            <div class="spinner"></div>
+        </div>
+        <div id="toast-container"></div>
+    </div>
+    <script src="/app.js"></script>
+</body>
+</html>
