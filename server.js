@@ -9,6 +9,7 @@ const docx = require('docx');
 const PORT = 3003;
 const DATA_DIR = path.join(__dirname, 'data');
 const JSON_FILE = path.join(DATA_DIR, 'reports.json');
+const IMAGES_DIR = path.join(DATA_DIR, 'images');
 
 // Path to the Asistencia Técnica data (for autocomplete)
 const ASISTENCIA_DATA = path.resolve(__dirname, '..', 'asistencia-tecnica', 'data', 'records.json');
@@ -20,12 +21,16 @@ const MIME = {
   '.json': 'application/json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
 };
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 if (!fs.existsSync(JSON_FILE)) fs.writeFileSync(JSON_FILE, '[]');
 
 function loadReports() {
@@ -197,6 +202,24 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ── Serve report images ─────────────────────────────
+  const imgMatch = urlPath.match(/^\/api\/images\/([^/]+)\/([^/]+)$/);
+  if (imgMatch && method === 'GET') {
+    const reportId = imgMatch[1];
+    const filename = imgMatch[2];
+    // Sanitize filename to prevent path traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      res.writeHead(400); return res.end('Bad request');
+    }
+    const imgPath = path.join(IMAGES_DIR, reportId, filename);
+    if (!fs.existsSync(imgPath)) { res.writeHead(404); return res.end('Not found'); }
+    const ext = path.extname(filename).toLowerCase();
+    const mime = MIME[ext] || 'application/octet-stream';
+    const buf = fs.readFileSync(imgPath);
+    res.writeHead(200, Object.assign({ 'Content-Type': mime, 'Content-Length': buf.length, 'Cache-Control': 'public, max-age=86400' }, corsHeaders(req)));
+    return res.end(buf);
+  }
+
   // ── DOCX Import ─────────────────────────────────────
   if (urlPath === '/api/import' && method === 'POST') {
     const contentType = req.headers['content-type'] || '';
@@ -231,19 +254,34 @@ const server = http.createServer(async (req, res) => {
           return json(req, res, { inserted: 0, skipped: 1, message: 'Informe duplicado (mismo cliente y fechas)' });
         }
 
+        const reportId = uuidv4();
+
+        // Save extracted images to disk
+        const images = [];
+        if (result.images && result.images.length > 0) {
+          const imgDir = path.join(IMAGES_DIR, reportId);
+          if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+          for (const img of result.images) {
+            const imgPath = path.join(imgDir, img.filename);
+            fs.writeFileSync(imgPath, img.buffer);
+            images.push({ filename: img.filename, contentType: img.contentType });
+          }
+        }
+
         const newReport = {
-          id: uuidv4(),
+          id: reportId,
           cliente: result.cliente,
           fecha_inicio: result.fecha_inicio,
           fecha_fin: result.fecha_fin,
           tecnicos: result.tecnicos,
           diario: result.diario,
           notas_adicionales: result.notas_adicionales,
+          images: images,
           created_at: new Date().toISOString()
         };
         reports.push(newReport);
         saveReports(reports);
-        return json(req, res, { inserted: 1, skipped: 0, report: newReport }, 201);
+        return json(req, res, { inserted: 1, skipped: 0, imageCount: images.length, report: newReport }, 201);
       } catch (e) {
         console.error('Import error:', e);
         return json(req, res, { error: 'Failed to parse DOCX file' }, 400);
@@ -282,7 +320,7 @@ const server = http.createServer(async (req, res) => {
 
 // ─── DOCX Export Builder ─────────────────────────────
 const { Document, Packer, Paragraph, Table, TableRow, TableCell,
-        TextRun, AlignmentType, WidthType, BorderStyle, HeadingLevel,
+        TextRun, ImageRun, AlignmentType, WidthType, BorderStyle, HeadingLevel,
         ShadingType, TableLayoutType, VerticalAlign } = docx;
 
 const BRAND_BLUE = '1E40AF';
@@ -401,6 +439,40 @@ function buildDocx(report) {
     );
   }
 
+  // Images
+  if (report.images && report.images.length > 0) {
+    children.push(
+      new Paragraph({ spacing: { before: 300, after: 100 } }),
+      new Paragraph({
+        children: [new TextRun({ text: 'FOTOS', bold: true, font: 'Calibri', size: 26, color: BRAND_BLUE })],
+        spacing: { after: 200 },
+      })
+    );
+    for (const img of report.images) {
+      const imgPath = path.join(IMAGES_DIR, report.id, img.filename);
+      if (fs.existsSync(imgPath)) {
+        const imgBuf = fs.readFileSync(imgPath);
+        try {
+          children.push(
+            new Paragraph({
+              children: [
+                new ImageRun({
+                  data: imgBuf,
+                  transformation: { width: 500, height: 375 },
+                  type: img.contentType === 'image/png' ? 'png' : 'jpg',
+                }),
+              ],
+              spacing: { after: 200 },
+            })
+          );
+        } catch (e) {
+          // Skip images that can't be embedded
+          console.warn('Could not embed image:', img.filename, e.message);
+        }
+      }
+    }
+  }
+
   const doc = new Document({
     sections: [{
       properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
@@ -438,9 +510,30 @@ function makeInfoRow(label, value) {
 
 // ─── DOCX Import Parser ──────────────────────────────
 async function parseDocxImport(buffer) {
+  // Extract text
   const result = await mammoth.extractRawText({ buffer });
   const text = result.value || '';
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Extract images using mammoth's convertToHtml with image handler
+  const extractedImages = [];
+  let imgCounter = 0;
+  await mammoth.convertToHtml({ buffer }, {
+    convertImage: mammoth.images.imgElement(function(image) {
+      return image.read().then(function(imageBuffer) {
+        imgCounter++;
+        const ct = image.contentType || 'image/png';
+        const ext = ct.includes('jpeg') || ct.includes('jpg') ? '.jpg'
+                  : ct.includes('gif') ? '.gif'
+                  : ct.includes('webp') ? '.webp'
+                  : ct.includes('svg') ? '.svg'
+                  : '.png';
+        const filename = `img_${String(imgCounter).padStart(3, '0')}${ext}`;
+        extractedImages.push({ filename, buffer: imageBuffer, contentType: ct });
+        return { src: filename }; // placeholder, we don't use the HTML
+      });
+    })
+  });
 
   let cliente = '', fecha_inicio = '', fecha_fin = '', tecnicos = '', notas_adicionales = '';
   const diario = [];
@@ -579,7 +672,7 @@ async function parseDocxImport(buffer) {
     return { error: 'No se pudo extraer el cliente del documento. Asegúrese de que el documento contiene "CUSTOMER NAME:" o "Cliente / Proyecto".' };
   }
 
-  return { cliente, fecha_inicio, fecha_fin, tecnicos, diario, notas_adicionales };
+  return { cliente, fecha_inicio, fecha_fin, tecnicos, diario, notas_adicionales, images: extractedImages };
 }
 
 server.listen(PORT, () => {

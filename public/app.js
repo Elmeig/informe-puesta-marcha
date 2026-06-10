@@ -284,6 +284,23 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
+        // Show images if any
+        if (report.images && report.images.length > 0) {
+            html += `
+                <h3 style="margin: 2rem 0 1rem 0; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📸 Fotos (${report.images.length})</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;">
+            `;
+            report.images.forEach(img => {
+                html += `
+                    <a href="api/images/${report.id}/${img.filename}" target="_blank" style="display:block; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s;">
+                        <img src="api/images/${report.id}/${img.filename}" alt="${escapeHtml(img.filename)}" 
+                             style="width: 100%; height: auto; display: block;" loading="lazy">
+                    </a>
+                `;
+            });
+            html += `</div>`;
+        }
+
         document.getElementById('view-content').innerHTML = html;
         DOM.modalView.classList.add('active');
     };
@@ -338,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (data.skipped > 0) {
                 showToast(data.message || 'Informe duplicado, no se importó', 'info');
             } else {
-                showToast(`Informe importado correctamente`, 'success');
+                showToast(`Informe importado correctamente${data.imageCount ? ' (' + data.imageCount + ' fotos)' : ''}`, 'success');
                 await fetchReports();
             }
         } catch (err) {
