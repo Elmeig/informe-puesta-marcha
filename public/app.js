@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchReports() {
         DOM.loading.style.display = 'flex';
         try {
-            const res = await fetch('/api/reports');
+            const res = await fetch('api/reports');
             const data = await res.json();
             reports = data.reports || [];
             renderReports();
@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             DOM.loading.style.display = 'flex';
             const method = isEditMode ? 'PUT' : 'POST';
-            const url = isEditMode ? '/api/reports/' + editId : '/api/reports';
+            const url = isEditMode ? 'api/reports/' + editId : 'api/reports';
             
             const res = await fetch(url, {
                 method,
@@ -222,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('¿Seguro que deseas eliminar este informe?')) return;
         try {
             DOM.loading.style.display = 'flex';
-            const res = await fetch('/api/reports/' + id, { method: 'DELETE' });
+            const res = await fetch('api/reports/' + id, { method: 'DELETE' });
             if (!res.ok) throw new Error('Error deleting');
             showToast('Informe eliminado', 'success');
             await fetchReports();
