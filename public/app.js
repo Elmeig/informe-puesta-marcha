@@ -29,7 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Search & Theme
         searchInput: document.getElementById('global-search-input'),
-        btnTheme: document.getElementById('btn-theme')
+        btnTheme: document.getElementById('btn-theme'),
+
+        // Import / Export
+        btnImport: document.getElementById('btn-import'),
+        importFileInput: document.getElementById('import-file-input'),
+        btnExportDocx: document.getElementById('btn-export-docx'),
     };
 
     // Theme toggle — 3 themes: light → mid → dark (same as Bug Tracker)
@@ -96,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div style="display:flex; gap: 0.5rem;">
                         <button class="btn-secondary btn-sm" onclick="viewReport('${r.id}')">👁️ Ver</button>
+                        <button class="btn-secondary btn-sm" onclick="exportReport('${r.id}')">📄</button>
                         <button class="btn-secondary btn-sm" onclick="editReport('${r.id}')">✏️ Editar</button>
                         <button class="btn-secondary btn-sm" onclick="deleteReport('${r.id}')" style="color: #ef4444; border-color: #ef4444;">🗑️</button>
                     </div>
@@ -306,6 +312,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load
     fetchReports();
+
+    // ── Import DOCX ────────────────────────────────────
+    DOM.btnImport.addEventListener('click', () => {
+        DOM.importFileInput.click();
+    });
+
+    DOM.importFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        DOM.loading.style.display = 'flex';
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const res = await fetch('api/import', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                showToast(data.error || 'Error al importar', 'error');
+            } else if (data.skipped > 0) {
+                showToast(data.message || 'Informe duplicado, no se importó', 'info');
+            } else {
+                showToast(`Informe importado correctamente`, 'success');
+                await fetchReports();
+            }
+        } catch (err) {
+            showToast('Error al importar: ' + err.message, 'error');
+        } finally {
+            DOM.loading.style.display = 'none';
+            DOM.importFileInput.value = ''; // reset
+        }
+    });
+
+    // ── Export DOCX from View Modal ──────────────────────
+    let _viewingReportId = null; // track which report is being viewed
+
+    DOM.btnExportDocx.addEventListener('click', () => {
+        if (_viewingReportId) {
+            window.location.href = 'api/export/' + _viewingReportId;
+        }
+    });
+
+    // Patch viewReport to track ID
+    const _origViewReport = window.viewReport;
+    window.viewReport = (id) => {
+        _viewingReportId = id;
+        _origViewReport(id);
+    };
+
+    // Export from card button
+    window.exportReport = (id) => {
+        window.location.href = 'api/export/' + id;
+    };
 });
 
 /* ─── Combobox: Client Autocomplete ────────────────── */

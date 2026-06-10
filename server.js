@@ -2,6 +2,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const Busboy = require('busboy');
+const mammoth = require('mammoth');
+const docx = require('docx');
 
 const PORT = 3003;
 const DATA_DIR = path.join(__dirname, 'data');
@@ -172,6 +175,85 @@ const server = http.createServer(async (req, res) => {
     return json(req, res, { deleted: deleted.id });
   }
 
+  // ── DOCX Export ─────────────────────────────────────
+  const exportMatch = urlPath.match(/^\/api\/export\/([^/]+)$/);
+  if (exportMatch && method === 'GET') {
+    const id = exportMatch[1];
+    const report = reports.find(r => r.id === id);
+    if (!report) return json(req, res, { error: 'Not found' }, 404);
+
+    try {
+      const buf = await buildDocx(report);
+      const safeName = (report.cliente || 'Informe').replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+      res.writeHead(200, Object.assign({
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': `attachment; filename="Puesta_en_Marcha_${safeName}.docx"`,
+        'Content-Length': buf.length,
+      }, corsHeaders(req)));
+      return res.end(buf);
+    } catch (e) {
+      console.error('Export error:', e);
+      return json(req, res, { error: 'Export failed' }, 500);
+    }
+  }
+
+  // ── DOCX Import ─────────────────────────────────────
+  if (urlPath === '/api/import' && method === 'POST') {
+    const contentType = req.headers['content-type'] || '';
+    if (!contentType.includes('multipart/form-data')) {
+      return json(req, res, { error: 'multipart/form-data required' }, 400);
+    }
+
+    const busboy = Busboy({ headers: { 'content-type': contentType } });
+    let fileBuffer = null;
+
+    busboy.on('file', (field, stream, info) => {
+      const chunks = [];
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('end', () => { fileBuffer = Buffer.concat(chunks); });
+    });
+
+    busboy.on('finish', async () => {
+      if (!fileBuffer) return json(req, res, { error: 'No file received' }, 400);
+
+      try {
+        const result = await parseDocxImport(fileBuffer);
+        if (result.error) return json(req, res, { error: result.error }, 400);
+
+        // Check for duplicates (same client + same dates)
+        const isDuplicate = reports.some(r =>
+          r.cliente === result.cliente &&
+          r.fecha_inicio === result.fecha_inicio &&
+          r.fecha_fin === result.fecha_fin
+        );
+
+        if (isDuplicate) {
+          return json(req, res, { inserted: 0, skipped: 1, message: 'Informe duplicado (mismo cliente y fechas)' });
+        }
+
+        const newReport = {
+          id: uuidv4(),
+          cliente: result.cliente,
+          fecha_inicio: result.fecha_inicio,
+          fecha_fin: result.fecha_fin,
+          tecnicos: result.tecnicos,
+          diario: result.diario,
+          notas_adicionales: result.notas_adicionales,
+          created_at: new Date().toISOString()
+        };
+        reports.push(newReport);
+        saveReports(reports);
+        return json(req, res, { inserted: 1, skipped: 0, report: newReport }, 201);
+      } catch (e) {
+        console.error('Import error:', e);
+        return json(req, res, { error: 'Failed to parse DOCX file' }, 400);
+      }
+    });
+
+    req.pipe(busboy);
+    return;
+  }
+
   let filePath = path.join(__dirname, 'public', urlPath === '/' ? 'index.html' : urlPath);
   const publicDir = path.join(__dirname, 'public');
   if (!filePath.startsWith(publicDir + path.sep) && filePath !== publicDir) {
@@ -197,6 +279,230 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(200, { 'Content-Type': mime });
   res.end(content);
 });
+
+// ─── DOCX Export Builder ─────────────────────────────
+const { Document, Packer, Paragraph, Table, TableRow, TableCell,
+        TextRun, AlignmentType, WidthType, BorderStyle, HeadingLevel,
+        ShadingType, TableLayoutType, VerticalAlign } = docx;
+
+const BRAND_BLUE = '1E40AF';
+const HEADER_BG = 'EFF6FF';
+
+function buildDocx(report) {
+  const diario = report.diario || [];
+
+  // Info table (Cliente, Período, Técnicos)
+  const infoRows = [
+    makeInfoRow('Cliente / Proyecto', report.cliente || ''),
+    makeInfoRow('Fecha Inicio', report.fecha_inicio || ''),
+    makeInfoRow('Fecha Fin', report.fecha_fin || ''),
+    makeInfoRow('Técnicos Involucrados', report.tecnicos || ''),
+  ];
+
+  const infoTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: infoRows,
+  });
+
+  // Diary table
+  const diaryHeaderRow = new TableRow({
+    tableHeader: true,
+    children: [
+      new TableCell({
+        width: { size: 20, type: WidthType.PERCENTAGE },
+        shading: { type: ShadingType.SOLID, color: BRAND_BLUE },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          children: [new TextRun({ text: 'Fecha', bold: true, color: 'FFFFFF', font: 'Calibri', size: 22 })],
+          alignment: AlignmentType.CENTER,
+        })],
+      }),
+      new TableCell({
+        width: { size: 80, type: WidthType.PERCENTAGE },
+        shading: { type: ShadingType.SOLID, color: BRAND_BLUE },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          children: [new TextRun({ text: 'Tareas Realizadas', bold: true, color: 'FFFFFF', font: 'Calibri', size: 22 })],
+          alignment: AlignmentType.CENTER,
+        })],
+      }),
+    ],
+  });
+
+  const diaryRows = diario.map((d, i) => new TableRow({
+    children: [
+      new TableCell({
+        shading: i % 2 === 0 ? { type: ShadingType.SOLID, color: HEADER_BG } : undefined,
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          children: [new TextRun({ text: d.fecha || '', font: 'Calibri', size: 20 })],
+          alignment: AlignmentType.CENTER,
+        })],
+      }),
+      new TableCell({
+        shading: i % 2 === 0 ? { type: ShadingType.SOLID, color: HEADER_BG } : undefined,
+        verticalAlign: VerticalAlign.TOP,
+        children: (d.descripcion || '').split('\n').map(line =>
+          new Paragraph({
+            children: [new TextRun({ text: line, font: 'Calibri', size: 20 })],
+            spacing: { after: 40 },
+          })
+        ),
+      }),
+    ],
+  }));
+
+  if (diaryRows.length === 0) {
+    diaryRows.push(new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: '-', font: 'Calibri' })] })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Sin registros diarios', font: 'Calibri', italics: true })] })] }),
+      ],
+    }));
+  }
+
+  const diaryTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
+    rows: [diaryHeaderRow, ...diaryRows],
+  });
+
+  const children = [
+    // Title
+    new Paragraph({
+      children: [new TextRun({ text: 'INFORME DE PUESTA EN MARCHA', bold: true, font: 'Calibri', size: 32, color: BRAND_BLUE })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 },
+    }),
+    // Info table
+    infoTable,
+    // Spacing
+    new Paragraph({ spacing: { before: 300, after: 100 } }),
+    // Diary heading
+    new Paragraph({
+      children: [new TextRun({ text: 'DIARIO DE PUESTA EN MARCHA', bold: true, font: 'Calibri', size: 26, color: BRAND_BLUE })],
+      spacing: { after: 200 },
+    }),
+    // Diary table
+    diaryTable,
+  ];
+
+  // Notas adicionales
+  if (report.notas_adicionales) {
+    children.push(
+      new Paragraph({ spacing: { before: 300, after: 100 } }),
+      new Paragraph({
+        children: [new TextRun({ text: 'NOTAS ADICIONALES', bold: true, font: 'Calibri', size: 26, color: BRAND_BLUE })],
+        spacing: { after: 200 },
+      }),
+      ...report.notas_adicionales.split('\n').map(line =>
+        new Paragraph({ children: [new TextRun({ text: line, font: 'Calibri', size: 20 })], spacing: { after: 60 } })
+      )
+    );
+  }
+
+  const doc = new Document({
+    sections: [{
+      properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
+      children,
+    }],
+  });
+
+  return Packer.toBuffer(doc);
+}
+
+function makeInfoRow(label, value) {
+  return new TableRow({
+    children: [
+      new TableCell({
+        width: { size: 30, type: WidthType.PERCENTAGE },
+        shading: { type: ShadingType.SOLID, color: BRAND_BLUE },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          children: [new TextRun({ text: label, bold: true, color: 'FFFFFF', font: 'Calibri', size: 22 })],
+          spacing: { before: 60, after: 60 },
+        })],
+      }),
+      new TableCell({
+        width: { size: 70, type: WidthType.PERCENTAGE },
+        shading: { type: ShadingType.SOLID, color: HEADER_BG },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          children: [new TextRun({ text: value, font: 'Calibri', size: 22 })],
+          spacing: { before: 60, after: 60 },
+        })],
+      }),
+    ],
+  });
+}
+
+// ─── DOCX Import Parser ──────────────────────────────
+async function parseDocxImport(buffer) {
+  const result = await mammoth.extractRawText({ buffer });
+  const text = result.value || '';
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Parse header fields from the info table
+  let cliente = '', fecha_inicio = '', fecha_fin = '', tecnicos = '', notas_adicionales = '';
+  const diario = [];
+
+  // Strategy: find known labels and take the text after them
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/cliente\s*\/?\s*proyecto/i.test(line)) {
+      // Value might be on the same line after the label, or on the next line
+      const after = line.replace(/.*cliente\s*\/?\s*proyecto\s*/i, '').trim();
+      cliente = after || (lines[i + 1] || '').trim();
+      if (!after && lines[i + 1]) i++;
+    } else if (/fecha\s+inicio/i.test(line)) {
+      const after = line.replace(/.*fecha\s+inicio\s*/i, '').trim();
+      fecha_inicio = after || (lines[i + 1] || '').trim();
+      if (!after && lines[i + 1]) i++;
+    } else if (/fecha\s+fin/i.test(line)) {
+      const after = line.replace(/.*fecha\s+fin\s*/i, '').trim();
+      fecha_fin = after || (lines[i + 1] || '').trim();
+      if (!after && lines[i + 1]) i++;
+    } else if (/t.cnicos?\s+involucrados?/i.test(line)) {
+      const after = line.replace(/.*t.cnicos?\s+involucrados?\s*/i, '').trim();
+      tecnicos = after || (lines[i + 1] || '').trim();
+      if (!after && lines[i + 1]) i++;
+    }
+  }
+
+  // Parse diary: look for date patterns (YYYY-MM-DD or DD/MM/YYYY) followed by description text
+  let inDiary = false;
+  let inNotas = false;
+  const dateRe = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/diario\s+de\s+puesta/i.test(line)) { inDiary = true; inNotas = false; continue; }
+    if (/notas?\s+adicionales?/i.test(line)) { inDiary = false; inNotas = true; continue; }
+    if (/tareas\s+realizadas?/i.test(line)) continue; // skip header
+    if (line === 'Fecha') continue; // skip header
+
+    if (inNotas) {
+      notas_adicionales += (notas_adicionales ? '\n' : '') + line;
+    } else if (inDiary) {
+      if (dateRe.test(line)) {
+        // Collect all lines until next date or section
+        const descLines = [];
+        while (i + 1 < lines.length && !dateRe.test(lines[i + 1]) && !/notas?\s+adicionales?/i.test(lines[i + 1])) {
+          i++;
+          if (lines[i] === 'Fecha' || /tareas\s+realizadas?/i.test(lines[i])) continue;
+          descLines.push(lines[i]);
+        }
+        diario.push({ fecha: line, descripcion: descLines.join('\n') });
+      }
+    }
+  }
+
+  if (!cliente) {
+    return { error: 'No se pudo extraer el cliente del documento' };
+  }
+
+  return { cliente, fecha_inicio, fecha_fin, tecnicos, diario, notas_adicionales };
+}
 
 server.listen(PORT, () => {
   console.log(`Puesta en Marcha server running on port ${PORT}`);

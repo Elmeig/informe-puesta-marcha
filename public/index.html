@@ -25,6 +25,10 @@
                 <button id="btn-add-record" class="btn-primary" title="Nuevo Informe">
                     ➕ Nuevo Informe
                 </button>
+                <button id="btn-import" class="btn-secondary" title="Importar DOCX" style="margin-left: 0.5rem; color: #fff; border-color: rgba(255,255,255,0.3);">
+                    📄 Importar
+                </button>
+                <input type="file" id="import-file-input" accept=".docx" style="display:none">
             </div>
             <div class="header-right">
                 <div class="header-search">
@@ -124,6 +128,7 @@
                     <!-- Report content injected here -->
                 </div>
                 <div class="modal-footer">
+                    <button type="button" class="btn-primary" id="btn-export-docx">📄 Exportar DOCX</button>
                     <button type="button" class="btn-secondary" id="btn-view-close-footer">Cerrar</button>
                 </div>
             </div>
