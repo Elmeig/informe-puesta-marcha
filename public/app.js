@@ -116,6 +116,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     DOM.searchInput.addEventListener('input', renderReports);
 
+    // Flatpickr defaults
+    const flatpickrConfig = {
+        locale: typeof flatpickr !== 'undefined' && flatpickr.l10ns && flatpickr.l10ns.es ? 'es' : 'default',
+        dateFormat: 'Y-m-d',
+        altInput: true,
+        altFormat: 'j M Y',
+        allowInput: true,
+        disableMobile: true,
+    };
+
+    function initFlatpickr(input) {
+        if (typeof flatpickr !== 'undefined' && !input._flatpickr) {
+            flatpickr(input, flatpickrConfig);
+        }
+    }
+
     // Form logic
     DOM.btnAddRecord.addEventListener('click', () => {
         isEditMode = false;
@@ -125,6 +141,9 @@ document.addEventListener('DOMContentLoaded', () => {
         DOM.diarioContainer.innerHTML = '';
         addDayEntry(); // Add one default day
         DOM.modalRecord.classList.add('active');
+        // Init flatpickr on main form dates
+        initFlatpickr(DOM.dateStart);
+        initFlatpickr(DOM.dateEnd);
     });
 
     [DOM.btnModalClose, DOM.btnCancelModal].forEach(btn => {
@@ -152,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <button type="button" class="btn-remove-day" style="position: absolute; right: 0.5rem; top: 0.5rem; background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer;">&times;</button>
             <div class="form-group" style="margin-bottom: 0.5rem;">
                 <label>Fecha del día</label>
-                <input type="date" class="day-date" required value="${dateStr}">
+                <input type="text" class="day-date" required value="${dateStr}" placeholder="Seleccionar fecha">
             </div>
             <div class="form-group" style="margin-bottom: 0.5rem;">
                 <label>Tareas Realizadas</label>
@@ -166,6 +185,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="photo-upload-status" style="margin-left: 0.5rem; font-size: 0.8rem; color: var(--text-muted);"></span>
             </div>
         `;
+
+        // Init flatpickr on the day date input
+        initFlatpickr(div.querySelector('.day-date'));
 
         // Render existing photos
         const photosGrid = div.querySelector('.day-photos-grid');
@@ -322,6 +344,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         DOM.modalRecord.classList.add('active');
+        // Init flatpickr on main form dates
+        initFlatpickr(DOM.dateStart);
+        initFlatpickr(DOM.dateEnd);
+        // Set values after flatpickr init
+        if (DOM.dateStart._flatpickr) DOM.dateStart._flatpickr.setDate(report.fecha_inicio || '', true);
+        if (DOM.dateEnd._flatpickr) DOM.dateEnd._flatpickr.setDate(report.fecha_fin || '', true);
     };
 
     window.deleteReport = async (id) => {
