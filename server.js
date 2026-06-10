@@ -7,6 +7,9 @@ const PORT = 3003;
 const DATA_DIR = path.join(__dirname, 'data');
 const JSON_FILE = path.join(DATA_DIR, 'reports.json');
 
+// Path to the Asistencia Técnica data (for autocomplete)
+const ASISTENCIA_DATA = path.resolve(__dirname, '..', 'asistencia-tecnica', 'data', 'records.json');
+
 const MIME = {
   '.html': 'text/html',
   '.css': 'text/css',
@@ -83,6 +86,33 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/reports' && method === 'GET') {
     const sorted = [...reports].sort((a, b) => (b.fecha_inicio || '').localeCompare(a.fecha_inicio || ''));
     return json(req, res, { total: sorted.length, reports: sorted });
+  }
+
+  // Autocomplete: pull unique clients + technicians from Asistencia Técnica data
+  if (urlPath === '/api/autocomplete' && method === 'GET') {
+    try {
+      let asistenciaRecords = [];
+      if (fs.existsSync(ASISTENCIA_DATA)) {
+        asistenciaRecords = JSON.parse(fs.readFileSync(ASISTENCIA_DATA, 'utf8'));
+      }
+      // Also merge in data from puesta-marcha's own reports
+      const allClients = new Set();
+      const allTechs = new Set();
+      asistenciaRecords.forEach(r => {
+        if (r.cliente) allClients.add(r.cliente.trim());
+        if (r.tecnico) allTechs.add(r.tecnico.trim());
+      });
+      reports.forEach(r => {
+        if (r.cliente) allClients.add(r.cliente.trim());
+        if (r.tecnicos) allTechs.add(r.tecnicos.trim());
+      });
+      return json(req, res, {
+        clients: [...allClients].sort(),
+        technicians: [...allTechs].sort()
+      });
+    } catch (e) {
+      return json(req, res, { clients: [], technicians: [] });
+    }
   }
 
   if (urlPath === '/api/reports' && method === 'POST') {

@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Theme toggle — 3 themes: light → mid → dark (same as Bug Tracker)
     const themes = ['light', 'mid', 'dark'];
-    const themeIcons = { light: '🌙', mid: '🌗', dark: '☀️' };
+    const themeIcons = { light: '☀️', mid: '🌗', dark: '🌙' };
     let currentTheme = localStorage.getItem('theme') || 'dark';
 
     function applyTheme(theme) {
@@ -310,35 +310,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ─── Combobox: Client Autocomplete ────────────────── */
 let _clientHighlightedIndex = -1;
+let _autocompleteData = { clients: [], technicians: [] };
+let _autocompleteLoaded = false;
 
-function getUniqueClients() {
+async function loadAutocompleteData() {
+    if (_autocompleteLoaded) return _autocompleteData;
     try {
-        const container = document.getElementById('records-container');
-        // Extract from rendered cards — fallback: use the global reports data
-    } catch (_) {}
-    return [];
-}
-
-function buildClientList() {
-    // Get unique clients from localStorage cached reports
-    try {
-        const cached = JSON.parse(localStorage.getItem('_puesta_clients') || '[]');
-        return cached;
+        const res = await fetch('api/autocomplete');
+        _autocompleteData = await res.json();
+        _autocompleteLoaded = true;
     } catch (_) {
-        return [];
+        _autocompleteData = { clients: [], technicians: [] };
     }
+    return _autocompleteData;
 }
 
+// Also refresh when reports are saved
 function updateCachedLists(reports) {
-    const clients = [...new Set(reports.map(r => r.cliente).filter(Boolean))].sort();
-    const techs = [...new Set(reports.map(r => r.tecnicos).filter(Boolean))].sort();
-    localStorage.setItem('_puesta_clients', JSON.stringify(clients));
-    localStorage.setItem('_puesta_techs', JSON.stringify(techs));
+    // Invalidate autocomplete cache so next open fetches fresh data
+    _autocompleteLoaded = false;
 }
 
-function filterClientDropdown(value, openOnEmpty = false) {
+async function filterClientDropdown(value, openOnEmpty = false) {
     const dropdown = document.getElementById('client-dropdown');
-    const list = JSON.parse(localStorage.getItem('_puesta_clients') || '[]');
+    const data = await loadAutocompleteData();
+    const list = data.clients || [];
     const q = value.trim().toLowerCase();
 
     if (!openOnEmpty && !q) { dropdown.classList.remove('open'); return; }
@@ -409,9 +405,10 @@ function handleClientKeydown(event) {
 /* ─── Combobox: Technician Autocomplete ────────────── */
 let _techHighlightedIndex = -1;
 
-function filterTechDropdown(value, openOnEmpty = false) {
+async function filterTechDropdown(value, openOnEmpty = false) {
     const dropdown = document.getElementById('tech-dropdown');
-    const list = JSON.parse(localStorage.getItem('_puesta_techs') || '[]');
+    const data = await loadAutocompleteData();
+    const list = data.technicians || [];
     const q = value.trim().toLowerCase();
 
     if (!openOnEmpty && !q) { dropdown.classList.remove('open'); return; }
