@@ -141,24 +141,113 @@ document.addEventListener('DOMContentLoaded', () => {
 
     DOM.btnAddDay.addEventListener('click', addDayEntry);
 
-    function addDayEntry(dateStr = '', descStr = '') {
+    function addDayEntry(dateStr = '', descStr = '', existingImages = []) {
         const div = document.createElement('div');
         div.className = 'day-entry';
         div.style = 'border: 1px solid var(--border); padding: 1rem; margin-bottom: 1rem; border-radius: 6px; position: relative;';
+        // Store images as data attribute
+        div.dataset.images = JSON.stringify(existingImages);
+
         div.innerHTML = `
             <button type="button" class="btn-remove-day" style="position: absolute; right: 0.5rem; top: 0.5rem; background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer;">&times;</button>
             <div class="form-group" style="margin-bottom: 0.5rem;">
                 <label>Fecha del día</label>
                 <input type="date" class="day-date" required value="${dateStr}">
             </div>
-            <div class="form-group" style="margin-bottom: 0;">
+            <div class="form-group" style="margin-bottom: 0.5rem;">
                 <label>Tareas Realizadas</label>
                 <textarea class="day-desc" rows="4" required placeholder="Describe las tareas realizadas este día...">${descStr}</textarea>
             </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>📷 Fotos de este día</label>
+                <div class="day-photos-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem; margin-bottom: 0.5rem;"></div>
+                <input type="file" class="day-photo-input" accept="image/*" multiple style="display: none;">
+                <button type="button" class="btn-add-photos btn-secondary btn-sm" style="margin-top: 4px;">📷 Añadir Fotos</button>
+                <span class="photo-upload-status" style="margin-left: 0.5rem; font-size: 0.8rem; color: var(--text-muted);"></span>
+            </div>
         `;
-        div.querySelector('.btn-remove-day').addEventListener('click', () => {
-            div.remove();
+
+        // Render existing photos
+        const photosGrid = div.querySelector('.day-photos-grid');
+        if (existingImages.length > 0 && isEditMode && editId) {
+            existingImages.forEach(filename => {
+                const imgWrap = document.createElement('div');
+                imgWrap.style = 'position: relative; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);';
+                imgWrap.innerHTML = `
+                    <img src="api/images/${editId}/${filename}" alt="${filename}" style="width: 100%; height: auto; display: block;">
+                `;
+                photosGrid.appendChild(imgWrap);
+            });
+        }
+
+        // Remove button
+        div.querySelector('.btn-remove-day').addEventListener('click', () => div.remove());
+
+        // Photo upload
+        const fileInput = div.querySelector('.day-photo-input');
+        const addPhotosBtn = div.querySelector('.btn-add-photos');
+        const statusSpan = div.querySelector('.photo-upload-status');
+
+        addPhotosBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', async () => {
+            const files = fileInput.files;
+            if (!files || files.length === 0) return;
+
+            // We need a report ID first — if creating new, we save first
+            let reportId = isEditMode ? editId : null;
+
+            if (!reportId) {
+                statusSpan.textContent = '⚠️ Guarda el informe primero, luego edita para añadir fotos';
+                statusSpan.style.color = 'var(--danger)';
+                return;
+            }
+
+            // Find this day's index
+            const allDays = document.querySelectorAll('.day-entry');
+            let dayIndex = Array.from(allDays).indexOf(div);
+
+            statusSpan.textContent = '⏳ Subiendo...';
+            statusSpan.style.color = 'var(--text-muted)';
+
+            const formData = new FormData();
+            formData.append('dayIndex', dayIndex);
+            for (const file of files) {
+                formData.append('images', file);
+            }
+
+            try {
+                const res = await fetch(`api/reports/${reportId}/upload-images`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+                // Update local data
+                const currentImages = JSON.parse(div.dataset.images || '[]');
+                currentImages.push(...data.filenames);
+                div.dataset.images = JSON.stringify(currentImages);
+
+                // Add thumbnails
+                data.filenames.forEach(filename => {
+                    const imgWrap = document.createElement('div');
+                    imgWrap.style = 'position: relative; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);';
+                    imgWrap.innerHTML = `
+                        <img src="api/images/${reportId}/${filename}" alt="${filename}" style="width: 100%; height: auto; display: block;">
+                    `;
+                    photosGrid.appendChild(imgWrap);
+                });
+
+                statusSpan.textContent = `✅ ${data.filenames.length} foto(s) subida(s)`;
+                statusSpan.style.color = 'var(--success)';
+                fileInput.value = '';
+            } catch (err) {
+                statusSpan.textContent = `❌ ${err.message}`;
+                statusSpan.style.color = 'var(--danger)';
+            }
         });
+
         DOM.diarioContainer.appendChild(div);
     }
 
@@ -170,7 +259,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const diario = Array.from(dayEntries).map(entry => {
             return {
                 fecha: entry.querySelector('.day-date').value,
-                descripcion: entry.querySelector('.day-desc').value
+                descripcion: entry.querySelector('.day-desc').value,
+                images: JSON.parse(entry.dataset.images || '[]')
             };
         });
 
@@ -228,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (diario.length === 0) {
             addDayEntry();
         } else {
-            diario.forEach(d => addDayEntry(d.fecha, d.descripcion));
+            diario.forEach(d => addDayEntry(d.fecha, d.descripcion, d.images || []));
         }
 
         DOM.modalRecord.classList.add('active');

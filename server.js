@@ -220,6 +220,78 @@ const server = http.createServer(async (req, res) => {
     return res.end(buf);
   }
 
+  // ── Upload images for a report's diary entry ───────
+  const uploadMatch = urlPath.match(/^\/api\/reports\/([^/]+)\/upload-images$/);
+  if (uploadMatch && method === 'POST') {
+    const reportId = uploadMatch[1];
+    const report = reports.find(r => r.id === reportId);
+    if (!report) return json(req, res, { error: 'Report not found' }, 404);
+
+    const contentType = req.headers['content-type'] || '';
+    if (!contentType.includes('multipart/form-data')) {
+      return json(req, res, { error: 'multipart/form-data required' }, 400);
+    }
+
+    const busboy = Busboy({ headers: { 'content-type': contentType } });
+    const uploadedFiles = [];
+    let dayIndex = -1; // -1 means "final photos"
+    
+    busboy.on('field', (name, val) => {
+      if (name === 'dayIndex') dayIndex = parseInt(val);
+    });
+
+    busboy.on('file', (field, stream, info) => {
+      const chunks = [];
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        const ct = info.mimeType || 'image/jpeg';
+        const ext = ct.includes('png') ? '.png' : ct.includes('gif') ? '.gif' : '.jpg';
+        // Find next available image number for this report
+        const existingImages = (report.images || []).length;
+        const imgNum = existingImages + uploadedFiles.length + 1;
+        const filename = `img_${String(imgNum).padStart(3, '0')}${ext}`;
+        uploadedFiles.push({ filename, buffer, contentType: ct });
+      });
+    });
+
+    busboy.on('finish', () => {
+      if (uploadedFiles.length === 0) {
+        return json(req, res, { error: 'No files received' }, 400);
+      }
+
+      // Ensure image directory exists
+      const imgDir = path.join(IMAGES_DIR, reportId);
+      if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+
+      // Save files to disk
+      const savedFilenames = [];
+      for (const file of uploadedFiles) {
+        const imgPath = path.join(imgDir, file.filename);
+        fs.writeFileSync(imgPath, file.buffer);
+        if (!report.images) report.images = [];
+        report.images.push({ filename: file.filename, contentType: file.contentType });
+        savedFilenames.push(file.filename);
+      }
+
+      // Associate with diary entry or final photos
+      if (dayIndex >= 0 && report.diario && report.diario[dayIndex]) {
+        if (!report.diario[dayIndex].images) report.diario[dayIndex].images = [];
+        report.diario[dayIndex].images.push(...savedFilenames);
+      } else {
+        // Add to finalImages
+        if (!report.finalImages) report.finalImages = [];
+        report.finalImages.push(...savedFilenames);
+      }
+
+      saveReports(reports);
+      return json(req, res, { uploaded: savedFilenames.length, filenames: savedFilenames });
+    });
+
+    req.pipe(busboy);
+    return;
+  }
+
   // ── DOCX Import ─────────────────────────────────────
   if (urlPath === '/api/import' && method === 'POST') {
     const contentType = req.headers['content-type'] || '';
