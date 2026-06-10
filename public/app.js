@@ -89,25 +89,27 @@ document.addEventListener('DOMContentLoaded', () => {
         filtered.forEach(r => {
             const card = document.createElement('div');
             card.className = 'record-card';
-            card.style = 'background: var(--surface); padding: 1.5rem; margin-bottom: 1rem; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 4px 6px var(--shadow);';
+            
+            const imgCount = (r.images || []).length;
+            const diaryCount = (r.diario || []).length;
             
             card.innerHTML = `
-                <div style="display:flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
-                    <div>
-                        <h3 style="margin:0; color: var(--primary); font-size: 1.25rem;">${escapeHtml(r.cliente)}</h3>
-                        <div style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.25rem;">
-                            📅 ${escapeHtml(r.fecha_inicio)} - ${escapeHtml(r.fecha_fin)} | 👨‍🔧 ${escapeHtml(r.tecnicos)}
-                        </div>
-                    </div>
-                    <div style="display:flex; gap: 0.5rem;">
-                        <button class="btn-secondary btn-sm" onclick="viewReport('${r.id}')">👁️ Ver</button>
-                        <button class="btn-secondary btn-sm" onclick="exportReport('${r.id}')">📄</button>
-                        <button class="btn-secondary btn-sm" onclick="editReport('${r.id}')">✏️ Editar</button>
-                        <button class="btn-secondary btn-sm" onclick="deleteReport('${r.id}')" style="color: #ef4444; border-color: #ef4444;">🗑️</button>
+                <div class="card-header">
+                    <h3 class="card-title">${escapeHtml(r.cliente)}</h3>
+                    <div class="card-actions">
+                        <button class="btn-secondary btn-sm" onclick="viewReport('${r.id}')" title="Ver">👁️</button>
+                        <button class="btn-secondary btn-sm" onclick="exportReport('${r.id}')" title="Exportar DOCX">📄</button>
+                        <button class="btn-secondary btn-sm" onclick="editReport('${r.id}')" title="Editar">✏️</button>
+                        <button class="btn-secondary btn-sm btn-delete" onclick="deleteReport('${r.id}')" title="Eliminar">🗑️</button>
                     </div>
                 </div>
-                <div style="color: var(--text); font-size: 0.95rem; line-height: 1.5; white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
-                    ${r.notas_adicionales ? escapeHtml(r.notas_adicionales) : 'Sin notas adicionales.'}
+                <div class="card-meta">
+                    <span class="card-meta-item">📅 ${escapeHtml(r.fecha_inicio)} → ${escapeHtml(r.fecha_fin)}</span>
+                    <span class="card-meta-item">👨‍🔧 ${escapeHtml(r.tecnicos)}</span>
+                    <span class="card-meta-item">📋 ${diaryCount} día${diaryCount !== 1 ? 's' : ''}${imgCount > 0 ? ` · 📷 ${imgCount}` : ''}</span>
+                </div>
+                <div class="card-body">
+                    ${r.notas_adicionales ? escapeHtml(r.notas_adicionales) : '<span style="opacity:0.5">Sin notas adicionales.</span>'}
                 </div>
             `;
             DOM.recordsContainer.appendChild(card);
