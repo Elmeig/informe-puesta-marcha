@@ -268,10 +268,25 @@ document.addEventListener('DOMContentLoaded', () => {
             report.diario.forEach(d => {
                 html += `
                     <div style="margin-bottom: 1.5rem; border-left: 3px solid var(--primary); padding-left: 1rem;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text);">${escapeHtml(d.fecha)}</h4>
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text);">📅 ${escapeHtml(d.fecha)}</h4>
                         <div style="white-space: pre-wrap; color: var(--text-muted); line-height: 1.5;">${escapeHtml(d.descripcion)}</div>
-                    </div>
                 `;
+                // Inline images for this day
+                const dayImgs = d.images || [];
+                if (dayImgs.length > 0) {
+                    html += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; margin-top: 0.75rem;">`;
+                    dayImgs.forEach(imgFilename => {
+                        html += `
+                            <a href="api/images/${report.id}/${imgFilename}" target="_blank" 
+                               style="display:block; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);">
+                                <img src="api/images/${report.id}/${imgFilename}" alt="${escapeHtml(imgFilename)}" 
+                                     style="width: 100%; height: auto; display: block;" loading="lazy">
+                            </a>
+                        `;
+                    });
+                    html += `</div>`;
+                }
+                html += `</div>`;
             });
         } else {
             html += `<p style="color: var(--text-muted);">No hay registro diario.</p>`;
@@ -279,21 +294,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (report.notas_adicionales) {
             html += `
-                <h3 style="margin: 2rem 0 1rem 0; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">Notas Adicionales</h3>
+                <h3 style="margin: 2rem 0 1rem 0; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📝 Notas Adicionales</h3>
                 <div style="white-space: pre-wrap; background: var(--bg); padding: 1rem; border-radius: 6px; border: 1px solid var(--border);">${escapeHtml(report.notas_adicionales)}</div>
             `;
         }
 
-        // Show images if any
-        if (report.images && report.images.length > 0) {
+        // Final photos (not tied to a specific day)
+        const finalImgs = report.finalImages || [];
+        if (finalImgs.length > 0) {
             html += `
-                <h3 style="margin: 2rem 0 1rem 0; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📸 Fotos (${report.images.length})</h3>
+                <h3 style="margin: 2rem 0 1rem 0; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📸 Fotos Finales (${finalImgs.length})</h3>
                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;">
             `;
-            report.images.forEach(img => {
+            finalImgs.forEach(imgFilename => {
                 html += `
-                    <a href="api/images/${report.id}/${img.filename}" target="_blank" style="display:block; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s;">
-                        <img src="api/images/${report.id}/${img.filename}" alt="${escapeHtml(img.filename)}" 
+                    <a href="api/images/${report.id}/${imgFilename}" target="_blank" 
+                       style="display:block; border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">
+                        <img src="api/images/${report.id}/${imgFilename}" alt="${escapeHtml(imgFilename)}" 
                              style="width: 100%; height: auto; display: block;" loading="lazy">
                     </a>
                 `;

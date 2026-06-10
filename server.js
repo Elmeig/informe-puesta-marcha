@@ -277,6 +277,7 @@ const server = http.createServer(async (req, res) => {
           diario: result.diario,
           notas_adicionales: result.notas_adicionales,
           images: images,
+          finalImages: result.finalImages || [],
           created_at: new Date().toISOString()
         };
         reports.push(newReport);
@@ -321,153 +322,198 @@ const server = http.createServer(async (req, res) => {
 // ─── DOCX Export Builder ─────────────────────────────
 const { Document, Packer, Paragraph, Table, TableRow, TableCell,
         TextRun, ImageRun, AlignmentType, WidthType, BorderStyle, HeadingLevel,
-        ShadingType, TableLayoutType, VerticalAlign } = docx;
+        ShadingType, TableLayoutType, VerticalAlign, PageBreak, TabStopPosition,
+        TabStopType, Tab } = docx;
 
 const BRAND_BLUE = '1E40AF';
-const HEADER_BG = 'EFF6FF';
+const ACCENT_BLUE = '3B82F6';
+const LIGHT_BG = 'F0F5FF';
+const DARK_TEXT = '1E293B';
+const MUTED_TEXT = '64748B';
+
+// Day name lookup for date formatting
+const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+function formatDateNice(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    return `${DAY_NAMES[d.getDay()]} ${d.getDate()} de ${MONTH_NAMES[d.getMonth()]} de ${d.getFullYear()}`;
+  } catch (e) { return dateStr; }
+}
 
 function buildDocx(report) {
   const diario = report.diario || [];
+  const children = [];
 
-  // Info table (Cliente, Período, Técnicos)
-  const infoRows = [
-    makeInfoRow('Cliente / Proyecto', report.cliente || ''),
-    makeInfoRow('Fecha Inicio', report.fecha_inicio || ''),
-    makeInfoRow('Fecha Fin', report.fecha_fin || ''),
-    makeInfoRow('Técnicos Involucrados', report.tecnicos || ''),
-  ];
+  // ═══ COVER SECTION ═══════════════════════════════════
+  // Spacer
+  children.push(new Paragraph({ spacing: { before: 1200 } }));
 
-  const infoTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: infoRows,
-  });
-
-  // Diary table
-  const diaryHeaderRow = new TableRow({
-    tableHeader: true,
-    children: [
-      new TableCell({
-        width: { size: 20, type: WidthType.PERCENTAGE },
-        shading: { type: ShadingType.SOLID, color: BRAND_BLUE },
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({
-          children: [new TextRun({ text: 'Fecha', bold: true, color: 'FFFFFF', font: 'Calibri', size: 22 })],
-          alignment: AlignmentType.CENTER,
-        })],
-      }),
-      new TableCell({
-        width: { size: 80, type: WidthType.PERCENTAGE },
-        shading: { type: ShadingType.SOLID, color: BRAND_BLUE },
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({
-          children: [new TextRun({ text: 'Tareas Realizadas', bold: true, color: 'FFFFFF', font: 'Calibri', size: 22 })],
-          alignment: AlignmentType.CENTER,
-        })],
-      }),
-    ],
-  });
-
-  const diaryRows = diario.map((d, i) => new TableRow({
-    children: [
-      new TableCell({
-        shading: i % 2 === 0 ? { type: ShadingType.SOLID, color: HEADER_BG } : undefined,
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({
-          children: [new TextRun({ text: d.fecha || '', font: 'Calibri', size: 20 })],
-          alignment: AlignmentType.CENTER,
-        })],
-      }),
-      new TableCell({
-        shading: i % 2 === 0 ? { type: ShadingType.SOLID, color: HEADER_BG } : undefined,
-        verticalAlign: VerticalAlign.TOP,
-        children: (d.descripcion || '').split('\n').map(line =>
-          new Paragraph({
-            children: [new TextRun({ text: line, font: 'Calibri', size: 20 })],
-            spacing: { after: 40 },
-          })
-        ),
-      }),
-    ],
+  // Main title
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'INFORME DE', font: 'Calibri', size: 44, color: MUTED_TEXT })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 0 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'PUESTA EN MARCHA', font: 'Calibri', size: 56, bold: true, color: BRAND_BLUE })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 200 },
   }));
 
-  if (diaryRows.length === 0) {
-    diaryRows.push(new TableRow({
+  // Decorative line
+  children.push(new Paragraph({
+    children: [new TextRun({ text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', font: 'Calibri', size: 20, color: ACCENT_BLUE })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 400 },
+  }));
+
+  // Client name — large and prominent
+  children.push(new Paragraph({
+    children: [new TextRun({ text: report.cliente || '', font: 'Calibri', size: 40, bold: true, color: DARK_TEXT })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 300 },
+  }));
+
+  // Info details — clean lines
+  const infoItems = [
+    { label: 'Período', value: `${report.fecha_inicio || '—'} a ${report.fecha_fin || '—'}` },
+    { label: 'Técnicos', value: report.tecnicos || '—' },
+  ];
+  for (const item of infoItems) {
+    children.push(new Paragraph({
       children: [
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: '-', font: 'Calibri' })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Sin registros diarios', font: 'Calibri', italics: true })] })] }),
+        new TextRun({ text: `${item.label}: `, font: 'Calibri', size: 22, color: MUTED_TEXT }),
+        new TextRun({ text: item.value, font: 'Calibri', size: 22, color: DARK_TEXT, bold: true }),
       ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 80 },
     }));
   }
 
-  const diaryTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
-    rows: [diaryHeaderRow, ...diaryRows],
-  });
+  // Page break after cover
+  children.push(new Paragraph({ children: [new PageBreak()] }));
 
-  const children = [
-    // Title
-    new Paragraph({
-      children: [new TextRun({ text: 'INFORME DE PUESTA EN MARCHA', bold: true, font: 'Calibri', size: 32, color: BRAND_BLUE })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 300 },
-    }),
-    // Info table
-    infoTable,
-    // Spacing
-    new Paragraph({ spacing: { before: 300, after: 100 } }),
-    // Diary heading
-    new Paragraph({
-      children: [new TextRun({ text: 'DIARIO DE PUESTA EN MARCHA', bold: true, font: 'Calibri', size: 26, color: BRAND_BLUE })],
-      spacing: { after: 200 },
-    }),
-    // Diary table
-    diaryTable,
-  ];
+  // ═══ DIARY ENTRIES ═══════════════════════════════════
+  diario.forEach((day, dayIdx) => {
+    // Day header — styled with bottom border
+    const dateDisplay = formatDateNice(day.fecha);
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: `📅  `, font: 'Calibri', size: 24 }),
+        new TextRun({ text: dateDisplay || day.fecha, font: 'Calibri', size: 28, bold: true, color: BRAND_BLUE }),
+      ],
+      spacing: { before: dayIdx > 0 ? 400 : 100, after: 60 },
+      border: {
+        bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT_BLUE },
+      },
+    }));
 
-  // Notas adicionales
-  if (report.notas_adicionales) {
-    children.push(
-      new Paragraph({ spacing: { before: 300, after: 100 } }),
-      new Paragraph({
-        children: [new TextRun({ text: 'NOTAS ADICIONALES', bold: true, font: 'Calibri', size: 26, color: BRAND_BLUE })],
-        spacing: { after: 200 },
-      }),
-      ...report.notas_adicionales.split('\n').map(line =>
-        new Paragraph({ children: [new TextRun({ text: line, font: 'Calibri', size: 20 })], spacing: { after: 60 } })
-      )
-    );
-  }
+    // Description paragraphs
+    const descLines = (day.descripcion || '').split('\n');
+    for (const line of descLines) {
+      if (!line.trim()) continue;
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line, font: 'Calibri', size: 20, color: DARK_TEXT })],
+        spacing: { after: 60 },
+      }));
+    }
 
-  // Images
-  if (report.images && report.images.length > 0) {
-    children.push(
-      new Paragraph({ spacing: { before: 300, after: 100 } }),
-      new Paragraph({
-        children: [new TextRun({ text: 'FOTOS', bold: true, font: 'Calibri', size: 26, color: BRAND_BLUE })],
-        spacing: { after: 200 },
-      })
-    );
-    for (const img of report.images) {
-      const imgPath = path.join(IMAGES_DIR, report.id, img.filename);
-      if (fs.existsSync(imgPath)) {
-        const imgBuf = fs.readFileSync(imgPath);
-        try {
-          children.push(
-            new Paragraph({
+    // Inline images for this day
+    const dayImages = day.images || [];
+    if (dayImages.length > 0) {
+      children.push(new Paragraph({ spacing: { before: 120, after: 60 } }));
+      for (const imgFilename of dayImages) {
+        const imgMeta = (report.images || []).find(m => m.filename === imgFilename);
+        const imgPath = path.join(IMAGES_DIR, report.id, imgFilename);
+        if (fs.existsSync(imgPath)) {
+          const imgBuf = fs.readFileSync(imgPath);
+          try {
+            children.push(new Paragraph({
               children: [
                 new ImageRun({
                   data: imgBuf,
-                  transformation: { width: 500, height: 375 },
-                  type: img.contentType === 'image/png' ? 'png' : 'jpg',
+                  transformation: { width: 450, height: 338 },
                 }),
               ],
-              spacing: { after: 200 },
-            })
-          );
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 120 },
+            }));
+          } catch (e) {
+            console.warn('Could not embed image:', imgFilename, e.message);
+          }
+        }
+      }
+    }
+
+    // Subtle separator between days (not on last)
+    if (dayIdx < diario.length - 1) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '', font: 'Calibri', size: 8 })],
+        spacing: { before: 200, after: 200 },
+        border: {
+          bottom: { style: BorderStyle.DOTTED, size: 1, color: 'CBD5E1' },
+        },
+      }));
+    }
+  });
+
+  // ═══ NOTES SECTION ═══════════════════════════════════
+  if (report.notas_adicionales) {
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: '📝  ', font: 'Calibri', size: 24 }),
+        new TextRun({ text: 'NOTAS ADICIONALES', font: 'Calibri', size: 28, bold: true, color: BRAND_BLUE }),
+      ],
+      spacing: { after: 60 },
+      border: {
+        bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT_BLUE },
+      },
+    }));
+    children.push(new Paragraph({ spacing: { after: 120 } }));
+    for (const line of report.notas_adicionales.split('\n')) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line, font: 'Calibri', size: 20, color: DARK_TEXT })],
+        spacing: { after: 60 },
+      }));
+    }
+  }
+
+  // ═══ FINAL PHOTOS SECTION ════════════════════════════
+  const finalImgs = (report.finalImages || []);
+  if (finalImgs.length > 0) {
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: '📸  ', font: 'Calibri', size: 24 }),
+        new TextRun({ text: 'FOTOS FINALES', font: 'Calibri', size: 28, bold: true, color: BRAND_BLUE }),
+      ],
+      spacing: { after: 200 },
+      border: {
+        bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT_BLUE },
+      },
+    }));
+    for (const imgFilename of finalImgs) {
+      const imgPath = path.join(IMAGES_DIR, report.id, imgFilename);
+      if (fs.existsSync(imgPath)) {
+        const imgBuf = fs.readFileSync(imgPath);
+        try {
+          children.push(new Paragraph({
+            children: [
+              new ImageRun({
+                data: imgBuf,
+                transformation: { width: 450, height: 338 },
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 160 },
+          }));
         } catch (e) {
-          // Skip images that can't be embedded
-          console.warn('Could not embed image:', img.filename, e.message);
+          console.warn('Could not embed final image:', imgFilename, e.message);
         }
       }
     }
@@ -475,7 +521,11 @@ function buildDocx(report) {
 
   const doc = new Document({
     sections: [{
-      properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
+      properties: {
+        page: {
+          margin: { top: 900, right: 900, bottom: 900, left: 900 },
+        },
+      },
       children,
     }],
   });
@@ -483,42 +533,18 @@ function buildDocx(report) {
   return Packer.toBuffer(doc);
 }
 
-function makeInfoRow(label, value) {
-  return new TableRow({
-    children: [
-      new TableCell({
-        width: { size: 30, type: WidthType.PERCENTAGE },
-        shading: { type: ShadingType.SOLID, color: BRAND_BLUE },
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({
-          children: [new TextRun({ text: label, bold: true, color: 'FFFFFF', font: 'Calibri', size: 22 })],
-          spacing: { before: 60, after: 60 },
-        })],
-      }),
-      new TableCell({
-        width: { size: 70, type: WidthType.PERCENTAGE },
-        shading: { type: ShadingType.SOLID, color: HEADER_BG },
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({
-          children: [new TextRun({ text: value, font: 'Calibri', size: 22 })],
-          spacing: { before: 60, after: 60 },
-        })],
-      }),
-    ],
-  });
-}
-
 // ─── DOCX Import Parser ──────────────────────────────
 async function parseDocxImport(buffer) {
-  // Extract text
-  const result = await mammoth.extractRawText({ buffer });
-  const text = result.value || '';
+  // Step 1: Extract raw text for field parsing
+  const rawResult = await mammoth.extractRawText({ buffer });
+  const text = rawResult.value || '';
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // Extract images using mammoth's convertToHtml with image handler
+  // Step 2: Extract images AND track their position in the HTML flow
   const extractedImages = [];
   let imgCounter = 0;
-  await mammoth.convertToHtml({ buffer }, {
+
+  const htmlResult = await mammoth.convertToHtml({ buffer }, {
     convertImage: mammoth.images.imgElement(function(image) {
       return image.read().then(function(imageBuffer) {
         imgCounter++;
@@ -530,46 +556,104 @@ async function parseDocxImport(buffer) {
                   : '.png';
         const filename = `img_${String(imgCounter).padStart(3, '0')}${ext}`;
         extractedImages.push({ filename, buffer: imageBuffer, contentType: ct });
-        return { src: filename }; // placeholder, we don't use the HTML
+        return { src: `__IMG_${imgCounter}__` };
       });
     })
   });
 
+  // Step 3: Analyze HTML flow to associate images with diary entries
+  const html = htmlResult.value || '';
+  const dayNameRe = /(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/gi;
+  const imgRe = /__IMG_(\d+)__/g;
+  const noteRe = /ADDITIONAL\s+NOTE/gi;
+  const finalPhotoRe = /FINAL\s+PHOTOS/gi;
+
+  // Build position map of all markers
+  const markers = [];
+  let m;
+
+  while ((m = dayNameRe.exec(html)) !== null) {
+    const rawDate = m[2];
+    const parts = rawDate.split('/');
+    let fecha = rawDate;
+    if (parts.length === 3) {
+      const dd = parts[0].padStart(2, '0');
+      const mm = parts[1].padStart(2, '0');
+      const yyyy = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+      fecha = `${yyyy}-${mm}-${dd}`;
+    }
+    markers.push({ type: 'DAY', fecha, pos: m.index });
+  }
+  while ((m = imgRe.exec(html)) !== null) {
+    markers.push({ type: 'IMG', num: parseInt(m[1]), pos: m.index });
+  }
+  while ((m = noteRe.exec(html)) !== null) {
+    markers.push({ type: 'NOTE', pos: m.index });
+  }
+  while ((m = finalPhotoRe.exec(html)) !== null) {
+    markers.push({ type: 'FINAL', pos: m.index });
+  }
+  markers.sort((a, b) => a.pos - b.pos);
+
+  // Walk through markers and assign images to the current day
+  const dayImageMap = {}; // fecha -> [filename, ...]
+  const finalImageList = [];
+  let currentDay = null;
+  let inFinal = false;
+
+  for (const marker of markers) {
+    if (marker.type === 'DAY') {
+      currentDay = marker.fecha;
+      inFinal = false;
+      if (!dayImageMap[currentDay]) dayImageMap[currentDay] = [];
+    } else if (marker.type === 'FINAL') {
+      inFinal = true;
+      currentDay = null;
+    } else if (marker.type === 'NOTE') {
+      currentDay = null;
+      inFinal = false;
+    } else if (marker.type === 'IMG') {
+      const img = extractedImages[marker.num - 1];
+      if (img) {
+        if (inFinal) {
+          finalImageList.push(img.filename);
+        } else if (currentDay) {
+          dayImageMap[currentDay].push(img.filename);
+        } else {
+          // Image before any day — could be header/logo, add to final
+          finalImageList.push(img.filename);
+        }
+      }
+    }
+  }
+
+  // Step 4: Parse structured fields (same as before)
   let cliente = '', fecha_inicio = '', fecha_fin = '', tecnicos = '', notas_adicionales = '';
   const diario = [];
 
-  // ── Detect format ──────────────────────────────────
-  // Format A: Our export (labels: "Cliente / Proyecto", "Fecha Inicio", etc.)
-  // Format B: Original Word template (labels: "CUSTOMER NAME:", "DATE:", "EQUIPMENT:", etc.)
   const isFormatB = lines.some(l => /^CUSTOMER\s+NAME\s*:/i.test(l));
 
   if (isFormatB) {
-    // ── Parse Format B (original Word template) ──────
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/^CUSTOMER\s+NAME\s*:/i.test(line)) {
         cliente = line.replace(/^CUSTOMER\s+NAME\s*:\s*/i, '').trim();
       } else if (/^DATE\s*:/i.test(line)) {
         const dateStr = line.replace(/^DATE\s*:\s*/i, '').trim();
-        // Try to extract start and end dates from free text like "Del 21 al 31 de octubre del 2024"
         fecha_inicio = dateStr;
         fecha_fin = dateStr;
       } else if (/^EQUIPMENT\s*:/i.test(line)) {
-        // Store equipment info in tecnicos if no techs found
         const equip = line.replace(/^EQUIPMENT\s*:\s*/i, '').trim();
         if (!tecnicos) tecnicos = equip;
       }
     }
 
-    // Parse diary: day entries start with day-name + date (e.g., "Lunes 21/10/24", "MARTES 22/10/24")
-    const dayNameRe = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i;
+    const dayLineRe = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i;
     let inAction = false;
     let inNotes = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-
-      // Section markers
       if (/^ACTION\s*:/i.test(line)) { inAction = true; inNotes = false; continue; }
       if (/^ADDITIONAL\s+NOTE\s*:/i.test(line)) { inAction = false; inNotes = true; continue; }
       if (/^PURPOSE\s+OF\s+VISIT\s*:/i.test(line)) continue;
@@ -578,16 +662,11 @@ async function parseDocxImport(buffer) {
       if (inNotes) {
         notas_adicionales += (notas_adicionales ? '\n' : '') + line;
       } else if (inAction) {
-        const dayMatch = line.match(dayNameRe);
+        const dayMatch = line.match(dayLineRe);
         if (dayMatch) {
           const rawDate = dayMatch[2];
-          // Normalize date: DD/MM/YY → DD/MM/YYYY
-          let fecha = rawDate;
           const parts = rawDate.split('/');
-          if (parts.length === 3 && parts[2].length === 2) {
-            fecha = `${parts[0]}/${parts[1]}/20${parts[2]}`;
-          }
-          // Convert to YYYY-MM-DD for consistency
+          let fecha = rawDate;
           if (parts.length === 3) {
             const dd = parts[0].padStart(2, '0');
             const mm = parts[1].padStart(2, '0');
@@ -595,22 +674,24 @@ async function parseDocxImport(buffer) {
             fecha = `${yyyy}-${mm}-${dd}`;
           }
 
-          // Collect description lines until next day or section
           const descLines = [];
           while (i + 1 < lines.length) {
             const nextLine = lines[i + 1];
-            if (dayNameRe.test(nextLine)) break;
+            if (dayLineRe.test(nextLine)) break;
             if (/^ADDITIONAL\s+NOTE\s*:/i.test(nextLine)) break;
             if (/^FINAL\s+PHOTOS/i.test(nextLine)) break;
             i++;
             descLines.push(lines[i]);
           }
-          diario.push({ fecha, descripcion: descLines.join('\n') });
+          diario.push({
+            fecha,
+            descripcion: descLines.join('\n'),
+            images: dayImageMap[fecha] || []
+          });
         }
       }
     }
 
-    // Set fecha_inicio and fecha_fin from diary entries if possible
     if (diario.length > 0) {
       const sorted = [...diario].sort((a, b) => a.fecha.localeCompare(b.fecha));
       fecha_inicio = sorted[0].fecha;
@@ -618,7 +699,7 @@ async function parseDocxImport(buffer) {
     }
 
   } else {
-    // ── Parse Format A (our export format) ────────────
+    // Format A (our export)
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/cliente\s*\/?\s*proyecto/i.test(line)) {
@@ -640,7 +721,6 @@ async function parseDocxImport(buffer) {
       }
     }
 
-    // Parse diary from our format
     let inDiary = false;
     let inNotas = false;
     const dateRe = /^(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/;
@@ -651,18 +731,23 @@ async function parseDocxImport(buffer) {
       if (/notas?\s+adicionales?/i.test(line)) { inDiary = false; inNotas = true; continue; }
       if (/tareas\s+realizadas?/i.test(line)) continue;
       if (line === 'Fecha') continue;
+      if (/fotos?\s+finales?/i.test(line)) { inDiary = false; continue; }
 
       if (inNotas) {
         notas_adicionales += (notas_adicionales ? '\n' : '') + line;
       } else if (inDiary) {
         if (dateRe.test(line)) {
           const descLines = [];
-          while (i + 1 < lines.length && !dateRe.test(lines[i + 1]) && !/notas?\s+adicionales?/i.test(lines[i + 1])) {
+          while (i + 1 < lines.length && !dateRe.test(lines[i + 1]) && !/notas?\s+adicionales?/i.test(lines[i + 1]) && !/fotos?\s+finales?/i.test(lines[i + 1])) {
             i++;
             if (lines[i] === 'Fecha' || /tareas\s+realizadas?/i.test(lines[i])) continue;
             descLines.push(lines[i]);
           }
-          diario.push({ fecha: line, descripcion: descLines.join('\n') });
+          diario.push({
+            fecha: line,
+            descripcion: descLines.join('\n'),
+            images: dayImageMap[line] || []
+          });
         }
       }
     }
@@ -672,7 +757,7 @@ async function parseDocxImport(buffer) {
     return { error: 'No se pudo extraer el cliente del documento. Asegúrese de que el documento contiene "CUSTOMER NAME:" o "Cliente / Proyecto".' };
   }
 
-  return { cliente, fecha_inicio, fecha_fin, tecnicos, diario, notas_adicionales, images: extractedImages };
+  return { cliente, fecha_inicio, fecha_fin, tecnicos, diario, notas_adicionales, images: extractedImages, finalImages: finalImageList };
 }
 
 server.listen(PORT, () => {
