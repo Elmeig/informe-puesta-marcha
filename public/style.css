@@ -289,6 +289,42 @@ body {
   font-size: 0.8rem;
   border-radius: 6px;
 }
+/* ─── Photo Thumbnails ───────────────────────────── */
+.photo-thumb {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  transition: transform 0.2s;
+}
+.photo-thumb:hover {
+  transform: scale(1.02);
+}
+.photo-delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+}
+.photo-thumb:hover .photo-delete-btn {
+  opacity: 1;
+}
+.photo-delete-btn:hover {
+  background: rgba(220, 38, 38, 1);
+}
 
 /* ─── Record Cards ───────────────────────────────── */
 .record-card {

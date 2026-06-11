@@ -220,6 +220,46 @@ const server = http.createServer(async (req, res) => {
     return res.end(buf);
   }
 
+  // ── Delete a report image ──────────────────────────
+  if (imgMatch && method === 'DELETE') {
+    const reportId = imgMatch[1];
+    const filename = imgMatch[2];
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      res.writeHead(400); return res.end('Bad request');
+    }
+
+    const report = reports.find(r => r.id === reportId);
+    if (!report) return json(req, res, { error: 'Report not found' }, 404);
+
+    // Delete file from disk
+    const imgPath = path.join(IMAGES_DIR, reportId, filename);
+    if (fs.existsSync(imgPath)) {
+      fs.unlinkSync(imgPath);
+    }
+
+    // Remove from report.images array
+    if (report.images) {
+      report.images = report.images.filter(img => img.filename !== filename);
+    }
+
+    // Remove from diary entry images
+    if (report.diario) {
+      report.diario.forEach(day => {
+        if (day.images) {
+          day.images = day.images.filter(f => f !== filename);
+        }
+      });
+    }
+
+    // Remove from finalImages
+    if (report.finalImages) {
+      report.finalImages = report.finalImages.filter(f => f !== filename);
+    }
+
+    saveReports(reports);
+    return json(req, res, { deleted: filename });
+  }
+
   // ── Upload images for a report's diary entry ───────
   const uploadMatch = urlPath.match(/^\/api\/reports\/([^/]+)\/upload-images$/);
   if (uploadMatch && method === 'POST') {

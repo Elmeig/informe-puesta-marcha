@@ -191,17 +191,34 @@ document.addEventListener('DOMContentLoaded', () => {
         // Init flatpickr on the day date input
         initFlatpickr(div.querySelector('.day-date'));
 
+        // Helper: add a photo thumbnail with delete button
+        function addPhotoThumbnail(reportId, filename) {
+            const imgWrap = document.createElement('div');
+            imgWrap.className = 'photo-thumb';
+            imgWrap.innerHTML = `
+                <img src="api/images/${reportId}/${filename}" alt="${filename}" style="width: 100%; height: auto; display: block;">
+                <button type="button" class="photo-delete-btn" title="Eliminar foto">&times;</button>
+            `;
+            imgWrap.querySelector('.photo-delete-btn').addEventListener('click', async () => {
+                if (!confirm('¿Eliminar esta foto?')) return;
+                try {
+                    const res = await fetch(`api/images/${reportId}/${filename}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Error deleting');
+                    // Remove from data-images
+                    const imgs = JSON.parse(div.dataset.images || '[]');
+                    div.dataset.images = JSON.stringify(imgs.filter(f => f !== filename));
+                    imgWrap.remove();
+                } catch (err) {
+                    alert('Error eliminando foto: ' + err.message);
+                }
+            });
+            photosGrid.appendChild(imgWrap);
+        }
+
         // Render existing photos
         const photosGrid = div.querySelector('.day-photos-grid');
         if (existingImages.length > 0 && isEditMode && editId) {
-            existingImages.forEach(filename => {
-                const imgWrap = document.createElement('div');
-                imgWrap.style = 'position: relative; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);';
-                imgWrap.innerHTML = `
-                    <img src="api/images/${editId}/${filename}" alt="${filename}" style="width: 100%; height: auto; display: block;">
-                `;
-                photosGrid.appendChild(imgWrap);
-            });
+            existingImages.forEach(filename => addPhotoThumbnail(editId, filename));
         }
 
         // Remove button
@@ -253,15 +270,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentImages.push(...data.filenames);
                 div.dataset.images = JSON.stringify(currentImages);
 
-                // Add thumbnails
-                data.filenames.forEach(filename => {
-                    const imgWrap = document.createElement('div');
-                    imgWrap.style = 'position: relative; border-radius: 6px; overflow: hidden; border: 1px solid var(--border);';
-                    imgWrap.innerHTML = `
-                        <img src="api/images/${reportId}/${filename}" alt="${filename}" style="width: 100%; height: auto; display: block;">
-                    `;
-                    photosGrid.appendChild(imgWrap);
-                });
+                // Add thumbnails with delete buttons
+                data.filenames.forEach(filename => addPhotoThumbnail(reportId, filename));
 
                 statusSpan.textContent = `✅ ${data.filenames.length} foto(s) subida(s)`;
                 statusSpan.style.color = 'var(--success)';
